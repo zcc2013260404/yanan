@@ -1,0 +1,76 @@
+kind: pipeline
+name: default
+
+clone:
+  depth: 1
+
+steps:
+- name: node
+  image: guoxudongdocker/drone-node
+  commands:
+  - rm -rf ./dist/static/ && rm -rf ./dist/index.html
+  - npm config set proxy http://192.168.7.58:1080
+  - npm config set https-proxy http://192.168.7.58:1080
+  - npm install
+  - npm run build
+  volumes:
+  - name: npmcache
+    path: /root/.npm-cache
+
+
+- name: build
+  image: plugins/docker
+  settings:
+    username:
+      from_secret: docker_user
+    password:
+      from_secret: docker_pass
+    repo: hub.dh.com/leansite/web
+    registry: hub.dh.com
+    tags: ${DRONE_BUILD_NUMBER}
+    context: ./dist
+  volumes:
+  - name: docker
+    path: /var/run/docker.sock
+  - name: daemon
+    path: /etc/docker/certs.d/hub.dh.com
+
+
+- name: run
+  image: hub.dh.com/library/drone-ssh
+  settings:
+    host: 192.168.2.159
+    username: root
+    password:
+      from_secret: ssh_password
+    port: 22
+    script:
+    - bash /usr/local/bin/webtag.sh ${DRONE_BUILD_NUMBER}
+
+- name: 钉钉通知
+  image: hub.dh.com/library/dingtalk:8
+  settings:
+    token:
+      from_secret: dingding
+    type: markdown
+    message_color: true
+    message_pic: true
+    sha_link: true
+
+
+volumes:
+- name: docker
+  host:
+    path: /var/run/docker.sock
+- name: daemon
+  host:
+    path: /etc/docker/certs.d/hub.dh.com
+- name: npmcache
+  host:
+    path: /var/lib/npm
+trigger:
+  branch:
+  - master
+  event:
+  - push
+
